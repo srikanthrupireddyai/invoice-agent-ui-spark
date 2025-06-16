@@ -16,7 +16,7 @@ const Index = () => {
           </div>
           <div className="space-x-4">
             <Button variant="ghost" asChild>
-              <Link to="/login">Login</Link>
+              <Link to="/signin">Sign In</Link>
             </Button>
             <Button asChild>
               <Link to="/signup">Get Started</Link>

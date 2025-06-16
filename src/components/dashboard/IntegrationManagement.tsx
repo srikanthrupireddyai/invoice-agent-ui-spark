@@ -1,22 +1,127 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, AlertCircle, Settings } from "lucide-react";
+import { CheckCircle, AlertCircle, Settings, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { ZOHO_CONFIG, constructOAuthUrl } from "@/config/oauth";
 
 export const IntegrationManagement = () => {
   const [integrations, setIntegrations] = useState([
     { id: "quickbooks", name: "QuickBooks Online", connected: false, status: "Not Connected" },
-    { id: "zoho", name: "Zoho Invoice", connected: true, status: "Connected", lastSync: "2 hours ago" },
+    { id: "zoho", name: "Zoho Invoice", connected: false, status: "Not Connected" },
     { id: "freshbooks", name: "FreshBooks", connected: false, status: "Not Connected" },
     { id: "xero", name: "Xero", connected: false, status: "Not Connected" }
   ]);
-
+  
+  const [isConnecting, setIsConnecting] = useState<string | null>(null);
   const { toast } = useToast();
 
+  // Check for integration status in session storage when component mounts
+  useEffect(() => {
+    const checkIntegrationStatus = () => {
+      // Check if Zoho integration was completed via callback route
+      const zohoStatus = sessionStorage.getItem('zohoIntegrationStatus');
+      const zohoTimestamp = sessionStorage.getItem('zohoIntegrationTimestamp');
+      
+      // If we have a successful integration status
+      if (zohoStatus === 'connected') {
+        try {
+          console.log('Zoho integration detected from callback route');
+          
+          // Update the local state to show integration as connected
+          handleSuccessfulConnection('zoho');
+          
+          // Format timestamp for display
+          let lastSync = 'Recently';
+          if (zohoTimestamp) {
+            const date = new Date(zohoTimestamp);
+            lastSync = date.toLocaleString();
+          }
+          
+          // Update the specific integration with the timestamp
+          setIntegrations(prev => 
+            prev.map(int => 
+              int.id === 'zoho' 
+                ? { ...int, connected: true, status: "Connected", lastSync }
+                : int
+            )
+          );
+          
+          toast({
+            title: "Zoho Integration Active",
+            description: "Your Zoho account is connected and ready to use.",
+          });
+          
+        } catch (error) {
+          console.error('Error processing integration status:', error);
+        }
+      }
+    };
+    
+    checkIntegrationStatus();
+  }, []);
+  
   const handleConnect = (integrationId: string) => {
+    if (integrationId === 'zoho') {
+      initiateZohoOAuth();
+    } else {
+      // For other integrations (simulation)
+      simulateConnection(integrationId);
+    }
+  };
+
+  const initiateZohoOAuth = () => {
+    try {
+      setIsConnecting('zoho');
+      
+      // Ensure we have the required configuration
+      if (!ZOHO_CONFIG.CLIENT_ID) {
+        toast({
+          title: "Configuration Error",
+          description: "Zoho Client ID is not configured. Please check your environment variables.",
+          variant: "destructive"
+        });
+        setIsConnecting(null);
+        return;
+      }
+      
+      // Use the VITE_ZOHO_REDIRECT_URI from environment which points to /callback
+      // This matches what's configured in the Zoho developer console
+      const redirectUri = import.meta.env.VITE_ZOHO_REDIRECT_URI || 'http://localhost:8080/callback';
+      
+      // Construct the OAuth URL with the dedicated callback route
+      const authUrl = constructOAuthUrl({
+        ...ZOHO_CONFIG,
+        REDIRECT_URI: redirectUri
+      });
+      
+      console.log(`Initiating Zoho OAuth flow with callback URL: ${redirectUri}`);
+      
+      // Redirect to Zoho for authorization
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error('Error initiating OAuth flow:', error);
+      toast({
+        title: "Connection Failed",
+        description: "Failed to initiate the authentication process.",
+        variant: "destructive"
+      });
+      setIsConnecting(null);
+    }
+  };
+
+  const simulateConnection = (integrationId: string) => {
+    setIsConnecting(integrationId);
+    
+    // Simulate API call delay
+    setTimeout(() => {
+      handleSuccessfulConnection(integrationId);
+    }, 1500);
+  };
+  
+  const handleSuccessfulConnection = (integrationId: string) => {
     setIntegrations(prev => 
       prev.map(int => 
         int.id === integrationId 
@@ -29,6 +134,8 @@ export const IntegrationManagement = () => {
       title: "Integration Connected",
       description: "Successfully connected to your invoicing platform.",
     });
+    
+    setIsConnecting(null);
   };
 
   const handleDisconnect = (integrationId: string) => {
@@ -105,6 +212,7 @@ export const IntegrationManagement = () => {
                         variant="destructive" 
                         size="sm"
                         onClick={() => handleDisconnect(integration.id)}
+                        disabled={isConnecting === integration.id}
                       >
                         Disconnect
                       </Button>
@@ -113,8 +221,16 @@ export const IntegrationManagement = () => {
                     <Button 
                       size="sm"
                       onClick={() => handleConnect(integration.id)}
+                      disabled={isConnecting !== null}
                     >
-                      Connect
+                      {isConnecting === integration.id ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        "Connect"
+                      )}
                     </Button>
                   )}
                 </div>
